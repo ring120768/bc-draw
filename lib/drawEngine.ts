@@ -132,27 +132,32 @@ export function generateDraw(
 
   if (errors.length === 0 && sizes.length > 0) {
     // Group 1 gets the largest size so must_first players have maximum room.
-    sizes = [...sizes].sort((a, b) => b - a);
+    // Club rule: 3-balls always tee off at the top of the draw,
+    // so sort ascending (smaller groups first, 4-balls at the end).
+    sizes = [...sizes].sort((a, b) => a - b);
 
+    // Exception: if must-first players won't fit in the top group,
+    // move the first group that is big enough to the front.
     if (mustFirst.length > sizes[0]) {
-      errors.push(
-        `${mustFirst.length} players are marked "Must be first group" but Group 1 only has ${sizes[0]} places.`
-      );
-    }
-    if (mustLast.length > sizes[sizes.length - 1]) {
-      // Move a larger group to the end if possible
-      const lastIdx = sizes.length - 1;
-      const bigIdx = sizes.findIndex((s) => s >= mustLast.length);
-      if (bigIdx >= 0 && bigIdx !== lastIdx && bigIdx !== 0) {
-        [sizes[bigIdx], sizes[lastIdx]] = [sizes[lastIdx], sizes[bigIdx]];
-      } else if (bigIdx === 0 && sizes.length > 1 && mustFirst.length <= sizes[lastIdx]) {
-        // Swap first and last if must_first still fits
-        [sizes[0], sizes[lastIdx]] = [sizes[lastIdx], sizes[0]];
-      } else if (sizes[lastIdx] < mustLast.length) {
+      const bigIdx = sizes.findIndex((s) => s >= mustFirst.length);
+      if (bigIdx > 0) {
+        const [big] = sizes.splice(bigIdx, 1);
+        sizes.unshift(big);
+        warnings.push(
+          `A ${big}-ball was moved to the top of the draw to fit ${mustFirst.length} "Must be first group" players.`
+        );
+      } else if (bigIdx === -1) {
         errors.push(
-          `${mustLast.length} players are marked "Must be last group" but the last group only has ${sizes[sizes.length - 1]} places.`
+          `${mustFirst.length} players are marked "Must be first group" but no group has that many places.`
         );
       }
+    }
+    // With ascending order the last group is the largest, so must-last
+    // players (max 4) always fit unless no group is big enough.
+    if (mustLast.length > sizes[sizes.length - 1]) {
+      errors.push(
+        `${mustLast.length} players are marked "Must be last group" but the last group only has ${sizes[sizes.length - 1]} places.`
+      );
     }
 
     if (sizes.length === 1 && mustFirst.length > 0 && mustLast.length > 0) {

@@ -220,6 +220,30 @@ describe("draw validity", () => {
     });
   }
 
+  it("3-balls always come before 4-balls in the draw (no overrides)", () => {
+    for (const n of [7, 10, 11, 14, 15, 18, 19, 22, 23]) {
+      const result = generateDraw(makePlayers(n));
+      const groupSizes = result.groups.map((g) => g.players.length);
+      const sorted = [...groupSizes].sort((a, b) => a - b);
+      expect(groupSizes).toEqual(sorted);
+      expect(groupSizes[0]).toBe(3);
+    }
+  });
+
+  it("a 4-ball moves to the top only when 4 must-first players need it", () => {
+    const players = makePlayers(18, [
+      { adminOverride: "must_first" },
+      { adminOverride: "must_first" },
+      { adminOverride: "must_first" },
+      { adminOverride: "must_first" },
+    ]);
+    const result = generateDraw(players);
+    expect(result.ok).toBe(true);
+    expect(result.groups[0].players.length).toBe(4);
+    const ids = result.groups[0].players.map((p) => p.id).sort();
+    expect(ids).toEqual(["p1", "p2", "p3", "p4"]);
+  });
+
   it("labels: Group 1 is Early group when must-first applied", () => {
     const players = makePlayers(18, [{ adminOverride: "must_first" }]);
     const result = generateDraw(players);
