@@ -8,18 +8,17 @@ import RulesCard from "@/components/RulesCard";
 import {
   getPlayers,
   getEntries,
-  upsertEntry,
-  removeEntry,
-  setCurrentDraw,
+  enterDraw,
+  updateEntry,
+  withdrawEntry,
+  clearAllEntries,
+  generateDraw,
   type Entry,
 } from "@/lib/store";
-import {
-  generateDraw,
-  type PlayerForDraw,
-  type PlayerPreference,
-  type AdminOverride,
+import type {
+  PlayerPreference,
+  AdminOverride,
 } from "@/lib/drawEngine";
-import { buildWhatsAppMessage } from "@/lib/whatsappMessage";
 import {
   getCurrentDrawWindow,
   formatDrawDate,
@@ -40,18 +39,25 @@ const OVERRIDE_LABELS: Record<AdminOverride, string> = {
 
 export default function AdminDashboard() {
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [addingPlayer, setAddingPlayer] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [busy, setBusy] = useState(false);
 
   const window = getCurrentDrawWindow();
 
+  const refresh = async () => {
+    const [pl, en] = await Promise.all([getPlayers(), getEntries()]);
+    setPlayers(pl);
+    setEntries(en);
+  };
+
   useEffect(() => {
-    setMounted(true);
-    setEntries(getEntries());
-    setPlayers(getPlayers());
+    refresh()
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const confirmed = useMemo(
@@ -94,56 +100,41 @@ export default function AdminDashboard() {
   if (confirmed.length > 0 && confirmed.length < 3)
     conflicts.push("At least 3 players are needed for a draw.");
 
-  const canGenerate = confirmed.length >= 3 && conflicts.length === 0;
+  const canGenerate = confirmed.length >= 3 && conflicts.length === 0 && !busy;
 
-  const refresh = () => {
-    setEntries(getEntries());
-    setPlayers(getPlayers());
-  };
-
-  const updateEntry = (playerId: string, patch: Partial<Entry>) => {
-    const entry = entries.find((e) => e.playerId === playerId);
-    if (!entry) return;
-    upsertEntry({ ...entry, ...patch });
-    refresh();
-  };
-
-  const addPlayer = (playerId: string) => {
-    upsertEntry({
-      playerId,
-      status: "playing",
-      playerPreference: "none",
-      adminOverride: "none",
-      enteredAt: new Date().toISOString(),
-    });
-    setAddingPlayer(false);
-    refresh();
-  };
-
-  const handleGenerate = () => {
-    const drawPlayers: PlayerForDraw[] = confirmed.map((e) => ({
-      id: e.playerId,
-      name: playerName(e.playerId),
-      playerPreference: e.playerPreference,
-      adminOverride: e.adminOverride,
-    }));
-
-    const result = generateDraw(drawPlayers);
-    if (!result.ok) {
-      alert("Draw failed:\n" + result.errors.join("\n"));
-      return;
+  const act = async (fn: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await fn();
+      await refresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setBusy(false);
     }
-
-    setCurrentDraw({
-      drawDate: window.drawDate.toISOString().slice(0, 10),
-      generatedAt: new Date().toISOString(),
-      result,
-      whatsappMessage: buildWhatsAppMessage(result, "07:45"),
-    });
-    router.push("/draw");
   };
 
-  if (!mounted) return null;
+  const handleGenerate = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await generateDraw();
+      router.push("/draw");
+    } catch (e) {
+      alert("Draw failed:\n" + (e instanceof Error ? e.message : String(e)));
+      setBusy(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <main>
+        <Header />
+        <p className="py-8 text-center text-sm text-gray-500">Loading…</p>
+      </main>
+    );
+  }
 
   return (
     <main>
@@ -158,7 +149,7 @@ export default function AdminDashboard() {
           <span className="font-bold text-club-green">{confirmed.length}</span>
         </p>
         <p className="text-xs text-gray-500">
-          Entry window: 07:45 yesterday → 07:44 today · Draw time: 07:45
+          Entry window: 07:45 Friday → 07:44 Saturday · Draw time: 07:45
         </p>
         <Link
           href="/players"
@@ -191,7 +182,7 @@ export default function AdminDashboard() {
           disabled={!canGenerate}
           className="rounded-xl bg-club-green py-3 text-sm font-semibold text-white disabled:opacity-40"
         >
-          Generate Draw
+          {busy ? "Working…" : "Generate Draw"}
         </button>
       </div>
 
@@ -202,7 +193,12 @@ export default function AdminDashboard() {
             {notEntered.map((p) => (
               <button
                 key={p.id}
-                onClick={() => addPlayer(p.id)}
+                onClick={() =>
+                  act(async () => {
+                    await enterDraw(p.id, "none", "admin");
+                    setAddingPlayer(false);
+                  })
+                }
                 className="block w-full rounded-lg border border-gray-200 p-2 text-left text-sm hover:bg-club-cream"
               >
                 {p.name}
@@ -271,9 +267,9 @@ export default function AdminDashboard() {
                       <button
                         key={pref}
                         onClick={() =>
-                          updateEntry(entry.playerId, {
-                            playerPreference: pref,
-                          })
+                          act(() =>
+                            updateEntry(entry.playerId, { preference: pref })
+                          )
                         }
                         className={`rounded-lg border px-2 py-1 text-xs ${
                           entry.playerPreference === pref
@@ -294,9 +290,9 @@ export default function AdminDashboard() {
                         <button
                           key={ovr}
                           onClick={() =>
-                            updateEntry(entry.playerId, {
-                              adminOverride: ovr,
-                            })
+                            act(() =>
+                              updateEntry(entry.playerId, { override: ovr })
+                            )
                           }
                           className={`rounded-lg border px-2 py-1 text-xs ${
                             entry.adminOverride === ovr
@@ -316,18 +312,21 @@ export default function AdminDashboard() {
                     type="text"
                     defaultValue={entry.note ?? ""}
                     onBlur={(e) =>
-                      updateEntry(entry.playerId, { note: e.target.value })
+                      act(() =>
+                        updateEntry(entry.playerId, { note: e.target.value })
+                      )
                     }
                     className="w-full rounded-lg border border-gray-300 p-2 text-sm"
                     placeholder="e.g. Needs to leave early"
                   />
                 </div>
                 <button
-                  onClick={() => {
-                    removeEntry(entry.playerId);
-                    setEditingId(null);
-                    refresh();
-                  }}
+                  onClick={() =>
+                    act(async () => {
+                      await withdrawEntry(entry.playerId, "admin");
+                      setEditingId(null);
+                    })
+                  }
                   className="w-full rounded-lg border border-red-400 py-2 text-xs font-semibold text-red-600"
                 >
                   Remove from draw
@@ -337,6 +336,23 @@ export default function AdminDashboard() {
           </div>
         ))}
       </div>
+
+      {confirmed.length > 0 && (
+        <button
+          onClick={() => {
+            if (
+              confirm(
+                `Clear all ${confirmed.length} entries and start a fresh week? The saved draw history is kept.`
+              )
+            ) {
+              act(() => clearAllEntries());
+            }
+          }}
+          className="mb-4 w-full rounded-xl border border-gray-300 py-2 text-xs font-semibold text-gray-500"
+        >
+          Start next week (clear all entries)
+        </button>
+      )}
 
       <RulesCard />
     </main>

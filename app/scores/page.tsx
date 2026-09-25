@@ -4,8 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
 import {
-  getCurrentDraw,
-  getDrawHistory,
+  getDrawState,
   saveScores,
   type SavedDraw,
   type Scores,
@@ -61,33 +60,43 @@ function winningTeams(results: TeamResult[]): TeamResult[] {
 }
 
 export default function ScoresPage() {
-  const [mounted, setMounted] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [draw, setDraw] = useState<SavedDraw | null>(null);
   const [history, setHistory] = useState<SavedDraw[]>([]);
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-    const current = getCurrentDraw();
-    const hist = getDrawHistory();
-    // Score the current draw, or the most recent saved one
-    const target = current ?? hist[0] ?? null;
-    setDraw(target);
-    setHistory(hist);
-    if (target?.scores) {
-      const prefill: Record<string, string> = {};
-      for (const [id, score] of Object.entries(target.scores)) {
-        prefill[id] = String(score);
+    (async () => {
+      const state = await getDrawState();
+      // Score the current draw, or the most recent saved one
+      const target = state.current ?? state.history[0] ?? null;
+      setDraw(target);
+      setHistory(state.history);
+      if (target?.scores) {
+        const prefill: Record<string, string> = {};
+        for (const [id, score] of Object.entries(target.scores)) {
+          prefill[id] = String(score);
+        }
+        setInputs(prefill);
       }
-      setInputs(prefill);
-    }
+    })()
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
-  if (!mounted) return null;
+  if (loading) {
+    return (
+      <main>
+        <Header />
+        <p className="py-8 text-center text-sm text-gray-500">Loading…</p>
+      </main>
+    );
+  }
 
-  const handleSave = () => {
-    if (!draw) return;
+  const handleSave = async () => {
+    if (!draw || busy) return;
     const scores: Scores = {};
     for (const p of playersInDraw(draw)) {
       const raw = (inputs[p.id] ?? "").trim();
@@ -96,11 +105,18 @@ export default function ScoresPage() {
       if (Number.isNaN(value)) continue;
       scores[p.id] = value;
     }
-    saveScores(draw.drawDate, scores);
-    setDraw({ ...draw, scores });
-    setHistory(getDrawHistory());
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setBusy(true);
+    try {
+      await saveScores(draw.drawDate, scores);
+      setDraw({ ...draw, scores });
+      setHistory((await getDrawState()).history);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not save scores.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const nameOf = (d: SavedDraw, playerId: string) =>
@@ -188,9 +204,10 @@ export default function ScoresPage() {
           </div>
           <button
             onClick={handleSave}
-            className="mt-4 w-full rounded-xl bg-club-green py-3 font-semibold text-white"
+            disabled={busy}
+            className="mt-4 w-full rounded-xl bg-club-green py-3 font-semibold text-white disabled:opacity-40"
           >
-            {saved ? "✓ Scores saved" : "Save Scores"}
+            {saved ? "✓ Scores saved" : busy ? "Saving…" : "Save Scores"}
           </button>
         </div>
       )}

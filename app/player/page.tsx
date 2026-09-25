@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react";
 import Header from "@/components/Header";
 import RulesCard from "@/components/RulesCard";
-import { getPlayers } from "@/lib/store";
 import {
+  getPlayers,
   getEntries,
-  upsertEntry,
+  enterDraw,
   withdrawEntry,
   type Entry,
 } from "@/lib/store";
@@ -27,58 +27,100 @@ const PREFERENCE_LABELS: Record<PlayerPreference, string> = {
 };
 
 export default function PlayerEntryPage() {
-  const [mounted, setMounted] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [playerId, setPlayerId] = useState("");
   const [preference, setPreference] = useState<PlayerPreference>("none");
   const [entries, setEntries] = useState<Entry[]>([]);
-  const [status, setStatus] = useState<WindowStatus>("open");
   const [players, setPlayers] = useState<Player[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<WindowStatus>("open");
 
   const window = getCurrentDrawWindow();
 
+  const load = async () => {
+    const [pl, en] = await Promise.all([getPlayers(), getEntries()]);
+    setPlayers(pl);
+    setEntries(en);
+  };
+
   useEffect(() => {
-    setMounted(true);
-    setEntries(getEntries());
-    setPlayers(getPlayers());
     setStatus(getWindowStatus(getCurrentDrawWindow()));
+    load()
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
-  if (!mounted) return null;
+  if (loading) {
+    return (
+      <main>
+        <Header />
+        <p className="py-8 text-center text-sm text-gray-500">Loading…</p>
+      </main>
+    );
+  }
 
   const myEntry = entries.find(
     (e) => e.playerId === playerId && e.status === "playing"
   );
 
-  const confirm = () => {
-    if (!playerId) return;
-    upsertEntry({
-      playerId,
-      status: "playing",
-      playerPreference: preference,
-      adminOverride: "none",
-      enteredAt: new Date().toISOString(),
-    });
-    setEntries(getEntries());
+  const confirm = async () => {
+    if (!playerId || busy) return;
+    setBusy(true);
+    try {
+      await enterDraw(playerId, preference);
+      setEntries(await getEntries());
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not enter the draw.");
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const withdraw = () => {
-    withdrawEntry(playerId);
-    setEntries(getEntries());
+  const withdraw = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await withdrawEntry(playerId);
+      setEntries(await getEntries());
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not withdraw.");
+    } finally {
+      setBusy(false);
+    }
   };
 
-  if (status === "closed") {
+  if (status !== "open") {
     return (
       <main>
         <Header badge="Entries Closed" />
         <div className="rounded-xl bg-white p-6 text-center shadow-sm">
-          <h2 className="mb-2 text-lg font-semibold">
-            Entries are closed for this draw.
-          </h2>
-          <p className="text-sm text-gray-600">
-            The draw closed at 07:44.
-            <br />
-            Groups are drawn at 07:45.
-          </p>
+          {status === "not_yet_open" ? (
+            <>
+              <h2 className="mb-2 text-lg font-semibold">
+                Entries aren’t open yet.
+              </h2>
+              <p className="text-sm text-gray-600">
+                The window for{" "}
+                <span className="font-medium">
+                  {formatDrawDate(window.drawDate)}
+                </span>{" "}
+                opens at
+                <br />
+                {formatWindowLine(window.windowStart)}.
+              </p>
+            </>
+          ) : (
+            <>
+              <h2 className="mb-2 text-lg font-semibold">
+                Entries are closed for this draw.
+              </h2>
+              <p className="text-sm text-gray-600">
+                The draw closed at 07:44.
+                <br />
+                Groups are drawn at 07:45.
+              </p>
+            </>
+          )}
           <p className="mt-4 text-sm text-gray-600">
             Contact the admin if you need to be added manually.
           </p>
@@ -131,7 +173,8 @@ export default function PlayerEntryPage() {
           </p>
           <button
             onClick={withdraw}
-            className="mt-4 w-full rounded-xl border-2 border-red-500 py-3 font-semibold text-red-600 hover:bg-red-50"
+            disabled={busy}
+            className="mt-4 w-full rounded-xl border-2 border-red-500 py-3 font-semibold text-red-600 hover:bg-red-50 disabled:opacity-40"
           >
             Withdraw
           </button>
@@ -181,10 +224,10 @@ export default function PlayerEntryPage() {
 
           <button
             onClick={confirm}
-            disabled={!playerId}
+            disabled={!playerId || busy}
             className="w-full rounded-xl bg-club-green py-4 text-lg font-semibold text-white shadow hover:bg-club-greenDark disabled:opacity-40"
           >
-            👍 I’m playing
+            {busy ? "Entering…" : "👍 I’m playing"}
           </button>
         </div>
       )}

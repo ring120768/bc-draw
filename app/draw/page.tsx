@@ -4,31 +4,38 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
 import {
-  getCurrentDraw,
-  setCurrentDraw,
-  saveDrawToHistory,
-  getEntries,
-  getPlayers,
-  getDrawHistory,
+  getDrawState,
+  generateDraw,
   type SavedDraw,
 } from "@/lib/store";
-import { generateDraw, type PlayerForDraw } from "@/lib/drawEngine";
-import { buildWhatsAppMessage } from "@/lib/whatsappMessage";
 
 export default function DrawResultPage() {
-  const [mounted, setMounted] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [draw, setDraw] = useState<SavedDraw | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [history, setHistory] = useState<SavedDraw[]>([]);
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    const state = await getDrawState();
+    setDraw(state.current);
+    setHistory(state.history);
+  };
 
   useEffect(() => {
-    setMounted(true);
-    setDraw(getCurrentDraw());
-    setHistory(getDrawHistory());
+    load()
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
-  if (!mounted) return null;
+  if (loading) {
+    return (
+      <main>
+        <Header />
+        <p className="py-8 text-center text-sm text-gray-500">Loading…</p>
+      </main>
+    );
+  }
 
   if (!draw) {
     return (
@@ -58,35 +65,19 @@ export default function DrawResultPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const reshuffle = () => {
-    const players = getPlayers();
-    const confirmed = getEntries().filter((e) => e.status === "playing");
-    const drawPlayers: PlayerForDraw[] = confirmed.map((e) => ({
-      id: e.playerId,
-      name: players.find((p) => p.id === e.playerId)?.name ?? "Unknown",
-      playerPreference: e.playerPreference,
-      adminOverride: e.adminOverride,
-    }));
-    const result = generateDraw(drawPlayers);
-    if (!result.ok) {
-      alert("Reshuffle failed:\n" + result.errors.join("\n"));
-      return;
+  const reshuffle = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await generateDraw();
+      await load();
+    } catch (e) {
+      alert(
+        "Reshuffle failed:\n" + (e instanceof Error ? e.message : String(e))
+      );
+    } finally {
+      setBusy(false);
     }
-    const next: SavedDraw = {
-      ...draw,
-      generatedAt: new Date().toISOString(),
-      result,
-      whatsappMessage: buildWhatsAppMessage(result, "07:45"),
-    };
-    setCurrentDraw(next);
-    setDraw(next);
-    setSaved(false);
-  };
-
-  const save = () => {
-    saveDrawToHistory(draw);
-    setHistory(getDrawHistory());
-    setSaved(true);
   };
 
   return (
@@ -148,21 +139,13 @@ export default function DrawResultPage() {
         >
           {copied ? "✓ Copied!" : "Copy Message"}
         </button>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={reshuffle}
-            className="rounded-xl border-2 border-club-green bg-white py-3 font-semibold text-club-green"
-          >
-            Reshuffle
-          </button>
-          <button
-            onClick={save}
-            disabled={saved}
-            className="rounded-xl border-2 border-club-gold bg-white py-3 font-semibold text-club-gold disabled:opacity-40"
-          >
-            {saved ? "✓ Saved" : "Save Draw"}
-          </button>
-        </div>
+        <button
+          onClick={reshuffle}
+          disabled={busy}
+          className="rounded-xl border-2 border-club-green bg-white py-3 font-semibold text-club-green disabled:opacity-40"
+        >
+          {busy ? "Reshuffling…" : "Reshuffle"}
+        </button>
       </div>
 
       <div className="mb-4 rounded-xl bg-white p-4 shadow-sm">
@@ -181,7 +164,7 @@ export default function DrawResultPage() {
           </h3>
           <ul className="space-y-1 text-sm text-gray-600">
             {history.map((h) => (
-              <li key={h.generatedAt}>
+              <li key={h.drawDate}>
                 {h.drawDate} —{" "}
                 {h.result.groups.reduce((s, g) => s + g.players.length, 0)}{" "}
                 players, {h.result.groups.length} groups

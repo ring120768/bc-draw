@@ -99,15 +99,24 @@ function buildLeague(history: SavedDraw[]): LeagueRow[] {
 }
 
 export default function LeaguePage() {
-  const [mounted, setMounted] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState<SavedDraw[]>([]);
 
   useEffect(() => {
-    setMounted(true);
-    setHistory(getDrawHistory());
+    getDrawHistory()
+      .then(setHistory)
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
-  if (!mounted) return null;
+  if (loading) {
+    return (
+      <main>
+        <Header />
+        <p className="py-8 text-center text-sm text-gray-500">Loading…</p>
+      </main>
+    );
+  }
 
   const scored = history.filter(
     (d) => d.scores && Object.keys(d.scores).length > 0
