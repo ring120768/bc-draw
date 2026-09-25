@@ -32,6 +32,12 @@ export default function HomePage() {
           📊 League Table
         </Link>
         <RulesCard />
+        <Link
+          href="/help"
+          className="block text-center text-sm text-gray-500 underline"
+        >
+          How it works
+        </Link>
       </div>
     </main>
   );
