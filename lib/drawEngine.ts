@@ -136,30 +136,6 @@ export function generateDraw(
     // so sort ascending (smaller groups first, 4-balls at the end).
     sizes = [...sizes].sort((a, b) => a - b);
 
-    // Exception: if must-first players won't fit in the top group,
-    // move the first group that is big enough to the front.
-    if (mustFirst.length > sizes[0]) {
-      const bigIdx = sizes.findIndex((s) => s >= mustFirst.length);
-      if (bigIdx > 0) {
-        const [big] = sizes.splice(bigIdx, 1);
-        sizes.unshift(big);
-        warnings.push(
-          `A ${big}-ball was moved to the top of the draw to fit ${mustFirst.length} "Must be first group" players.`
-        );
-      } else if (bigIdx === -1) {
-        errors.push(
-          `${mustFirst.length} players are marked "Must be first group" but no group has that many places.`
-        );
-      }
-    }
-    // With ascending order the last group is the largest, so must-last
-    // players (max 4) always fit unless no group is big enough.
-    if (mustLast.length > sizes[sizes.length - 1]) {
-      errors.push(
-        `${mustLast.length} players are marked "Must be last group" but the last group only has ${sizes[sizes.length - 1]} places.`
-      );
-    }
-
     if (sizes.length === 1 && mustFirst.length > 0 && mustLast.length > 0) {
       warnings.push(
         "Only one group exists, so first-group and last-group overrides both point to the same group."
@@ -184,78 +160,73 @@ export function generateDraw(
     capacity[idx]--;
   };
 
-  // 1. Hard overrides
-  shuffle(mustFirst, random).forEach((p) => place(p, 0));
-  shuffle(mustLast, random).forEach((p) => place(p, lastIdx));
-
-  // 2. Soft preferences
+  // The draw works like names out of a hat: the order is drawn, then names
+  // fill the structured slots top to bottom (3-balls first).
+  // Must-first players are drawn first, prefer-early next, then everyone
+  // else, then prefer-late, with must-last players drawn at the very end.
   const remaining = players.filter((p) => p.adminOverride === "none");
-  const preferEarly = shuffle(
-    remaining.filter((p) => p.playerPreference === "prefer_early"),
-    random
-  );
-  const preferLate = shuffle(
-    remaining.filter((p) => p.playerPreference === "prefer_late"),
-    random
-  );
-  const noPreference = shuffle(
-    remaining.filter((p) => p.playerPreference === "none"),
-    random
-  );
+  const hat: PlayerForDraw[] = [
+    ...shuffle(mustFirst, random),
+    ...shuffle(
+      remaining.filter((p) => p.playerPreference === "prefer_early"),
+      random
+    ),
+    ...shuffle(
+      remaining.filter((p) => p.playerPreference === "none"),
+      random
+    ),
+    ...shuffle(
+      remaining.filter((p) => p.playerPreference === "prefer_late"),
+      random
+    ),
+    ...shuffle(mustLast, random),
+  ];
 
-  // Earliest available space for early preferences
-  let earlyUnhonoured = 0;
-  for (const p of preferEarly) {
-    const idx = capacity.findIndex((c) => c > 0);
-    if (idx === -1) {
-      errors.push("Internal error: no space left while placing early preferences.");
+  let g = 0;
+  for (const p of hat) {
+    while (g < capacity.length && capacity[g] === 0) g++;
+    if (g >= capacity.length) {
+      errors.push("Internal error: ran out of places while filling the draw.");
       return { ok: false, groups: [], warnings, errors };
     }
-    if (idx > 0) earlyUnhonoured++;
-    place(p, idx);
+    place(p, g);
   }
 
-  // Latest available space for late preferences
-  let lateUnhonoured = 0;
-  for (const p of preferLate) {
-    let idx = -1;
-    for (let i = capacity.length - 1; i >= 0; i--) {
-      if (capacity[i] > 0) {
-        idx = i;
-        break;
-      }
-    }
-    if (idx === -1) {
-      errors.push("Internal error: no space left while placing late preferences.");
-      return { ok: false, groups: [], warnings, errors };
-    }
-    if (idx < lastIdx) lateUnhonoured++;
-    place(p, idx);
+  // Warnings when hard overrides or preferences spilled beyond their group
+  const firstSpill = mustFirst.filter(
+    (p) => !groups[0].players.includes(p)
+  ).length;
+  if (firstSpill > 0) {
+    warnings.push(
+      `Group 1 is a ${sizes[0]}-ball, so ${firstSpill} "Must be first group" player${firstSpill > 1 ? "s" : ""} moved into the next spot (Group 2).`
+    );
   }
-
+  const lastSpill = mustLast.filter(
+    (p) => !groups[lastIdx].players.includes(p)
+  ).length;
+  if (lastSpill > 0) {
+    warnings.push(
+      `${lastSpill} "Must be last group" player${lastSpill > 1 ? "s" : ""} could not fit in the final group and moved up a spot.`
+    );
+  }
+  const earlyUnhonoured = remaining.filter(
+    (p) =>
+      p.playerPreference === "prefer_early" && !groups[0].players.includes(p)
+  ).length;
   if (earlyUnhonoured > 0) {
     warnings.push(
       `${earlyUnhonoured} early preference${earlyUnhonoured > 1 ? "s" : ""} could not be placed in Group 1 (placed as early as possible).`
     );
   }
+  const lateUnhonoured = remaining.filter(
+    (p) =>
+      p.playerPreference === "prefer_late" &&
+      !groups[lastIdx].players.includes(p)
+  ).length;
   if (lateUnhonoured > 0) {
     warnings.push(
       `${lateUnhonoured} late preference${lateUnhonoured > 1 ? "s" : ""} could not be placed in the last group (placed as late as possible).`
     );
-  }
-
-  // 3. Fill remaining spaces randomly
-  for (const p of noPreference) {
-    const openIdxs = capacity
-      .map((c, i) => ({ c, i }))
-      .filter(({ c }) => c > 0)
-      .map(({ i }) => i);
-    if (openIdxs.length === 0) {
-      errors.push("Internal error: no space left while filling remaining players.");
-      return { ok: false, groups: [], warnings, errors };
-    }
-    const idx = openIdxs[Math.floor(random() * openIdxs.length)];
-    place(p, idx);
   }
 
   // --- Validation ------------------------------------------------------------
@@ -275,9 +246,10 @@ export function generateDraw(
   }
 
   // --- Labels ------------------------------------------------------------------
-  const anyEarly =
-    mustFirst.length > 0 ||
-    groups[0].players.some((p) => p.playerPreference === "prefer_early");
+  const anyEarly = groups[0].players.some(
+    (p) =>
+      p.adminOverride === "must_first" || p.playerPreference === "prefer_early"
+  );
   const anyLate =
     mustLast.length > 0 ||
     groups[lastIdx].players.some((p) => p.playerPreference === "prefer_late");

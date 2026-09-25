@@ -76,7 +76,7 @@ describe("calculateGroupSizes", () => {
 // --- 2. Hard override tests -----------------------------------------------------
 
 describe("hard overrides", () => {
-  it("4 must-first players all land in Group 1", () => {
+  it("a 4th must-first player spills into the next spot (Group 2)", () => {
     const players = makePlayers(18, [
       { adminOverride: "must_first" },
       { adminOverride: "must_first" },
@@ -85,9 +85,29 @@ describe("hard overrides", () => {
     ]);
     const result = generateDraw(players);
     expect(result.ok).toBe(true);
+    // 18 players = 3+3+4+4+4: three must-firsts fill Group 1,
+    // the fourth takes the next slot in Group 2.
+    expect(result.groups[0].players.length).toBe(3);
     const group1Ids = result.groups[0].players.map((p) => p.id);
-    expect(group1Ids.sort()).toEqual(["p1", "p2", "p3", "p4"]);
-    expect(result.groups[0].players.length).toBeLessThanOrEqual(4);
+    const group2Ids = result.groups[1].players.map((p) => p.id);
+    const mustFirstIds = ["p1", "p2", "p3", "p4"];
+    expect(group1Ids.every((id) => mustFirstIds.includes(id))).toBe(true);
+    const spilled = mustFirstIds.filter((id) => !group1Ids.includes(id));
+    expect(spilled.length).toBe(1);
+    expect(group2Ids).toContain(spilled[0]);
+    expect(result.warnings.join(" ")).toMatch(/next spot/);
+  });
+
+  it("up to 3 must-first players stay in Group 1 (a 3-ball)", () => {
+    const players = makePlayers(18, [
+      { adminOverride: "must_first" },
+      { adminOverride: "must_first" },
+      { adminOverride: "must_first" },
+    ]);
+    const result = generateDraw(players);
+    expect(result.ok).toBe(true);
+    const ids = result.groups[0].players.map((p) => p.id).sort();
+    expect(ids).toEqual(["p1", "p2", "p3"]);
   });
 
   it("5 must-first players -> error", () => {
@@ -228,20 +248,6 @@ describe("draw validity", () => {
       expect(groupSizes).toEqual(sorted);
       expect(groupSizes[0]).toBe(3);
     }
-  });
-
-  it("a 4-ball moves to the top only when 4 must-first players need it", () => {
-    const players = makePlayers(18, [
-      { adminOverride: "must_first" },
-      { adminOverride: "must_first" },
-      { adminOverride: "must_first" },
-      { adminOverride: "must_first" },
-    ]);
-    const result = generateDraw(players);
-    expect(result.ok).toBe(true);
-    expect(result.groups[0].players.length).toBe(4);
-    const ids = result.groups[0].players.map((p) => p.id).sort();
-    expect(ids).toEqual(["p1", "p2", "p3", "p4"]);
   });
 
   it("labels: Group 1 is Early group when must-first applied", () => {
