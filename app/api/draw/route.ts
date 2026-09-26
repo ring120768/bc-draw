@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { currentDrawDate } from "@/lib/serverWindow";
+import { db, getSetting } from "@/lib/db";
+import { targetDrawDate } from "@/lib/serverWindow";
 import { generateDraw, type PlayerForDraw } from "@/lib/drawEngine";
 import { buildWhatsAppMessage } from "@/lib/whatsappMessage";
 
@@ -44,7 +44,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const drawDate = currentDrawDate();
+  const drawDate = targetDrawDate(
+    new Date(),
+    await getSetting("special_draw_date")
+  );
   const whatsappMessage = buildWhatsAppMessage(result, "07:45");
 
   await p.query("update draws set is_current = false where is_current");

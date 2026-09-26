@@ -13,11 +13,12 @@ const SECTIONS: { title: string; body: string[] }[] = [
   {
     title: "Entering the draw",
     body: [
-      "Entries open Friday 07:45 and close Saturday 07:44 — same as the WhatsApp rule.",
+      "Entries open Friday 07:30 and close Saturday 07:30, then stay locked until the next Friday.",
       "Tap 👍 Player Entry, pick your name, tap “I'm playing”. Done in ten seconds.",
       "You can ask to Prefer early or Prefer late — the draw will lean that way if it can.",
-      "Changed your mind? Withdraw any time before 07:44.",
+      "Changed your mind? Withdraw any time before 07:30.",
       "Miss the window? Message the admin — they can add you manually.",
+      "Playing a Sunday or bank holiday? The admin opens a special sign-up: same rule, 07:30 the day before until 07:30 on the day.",
     ],
   },
   {

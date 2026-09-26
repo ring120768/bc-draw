@@ -48,6 +48,36 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// --- Entry window --------------------------------------------------------------
+
+export type WindowInfo = {
+  targetDate: string;
+  targetLabel: string;
+  phase: "open" | "pending" | "closed";
+  opensLabel: string;
+  closesLabel: string;
+  drawLabel: string;
+  special: boolean;
+  specialDate: string | null;
+};
+
+export async function getWindow(): Promise<WindowInfo> {
+  return api<WindowInfo>("/api/window");
+}
+
+/** Admin: open a special draw for a Sunday or bank holiday. */
+export async function openSpecialDraw(date: string): Promise<WindowInfo> {
+  return api<WindowInfo>("/api/window", {
+    method: "POST",
+    body: JSON.stringify({ date }),
+  });
+}
+
+/** Admin: cancel the special draw. */
+export async function cancelSpecialDraw(): Promise<WindowInfo> {
+  return api<WindowInfo>("/api/window", { method: "DELETE" });
+}
+
 // --- Players -----------------------------------------------------------------
 
 export async function getPlayers(): Promise<Player[]> {

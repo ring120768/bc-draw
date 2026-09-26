@@ -8,21 +8,21 @@ import RulesCard from "@/components/RulesCard";
 import {
   getPlayers,
   getEntries,
+  getWindow,
+  openSpecialDraw,
+  cancelSpecialDraw,
   enterDraw,
   updateEntry,
   withdrawEntry,
   clearAllEntries,
   generateDraw,
   type Entry,
+  type WindowInfo,
 } from "@/lib/store";
 import type {
   PlayerPreference,
   AdminOverride,
 } from "@/lib/drawEngine";
-import {
-  getCurrentDrawWindow,
-  formatDrawDate,
-} from "@/lib/timeWindow";
 import type { Player } from "@/lib/mockData";
 
 const PREFERENCE_LABELS: Record<PlayerPreference, string> = {
@@ -45,13 +45,18 @@ export default function AdminDashboard() {
   const [addingPlayer, setAddingPlayer] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [busy, setBusy] = useState(false);
-
-  const window = getCurrentDrawWindow();
+  const [win, setWin] = useState<WindowInfo | null>(null);
+  const [specialInput, setSpecialInput] = useState("");
 
   const refresh = async () => {
-    const [pl, en] = await Promise.all([getPlayers(), getEntries()]);
+    const [pl, en, w] = await Promise.all([
+      getPlayers(),
+      getEntries(),
+      getWindow(),
+    ]);
     setPlayers(pl);
     setEntries(en);
+    setWin(w);
   };
 
   useEffect(() => {
@@ -138,25 +143,87 @@ export default function AdminDashboard() {
 
   return (
     <main>
-      <Header badge="Entries Open" />
+      <Header badge={win?.phase === "open" ? "Entries Open" : "Entries Closed"} />
 
       <div className="mb-4 rounded-xl bg-white p-4 shadow-sm">
         <h2 className="font-semibold">
-          {formatDrawDate(window.drawDate)}
+          {win?.targetLabel}
+          {win?.special && (
+            <span className="ml-2 rounded-full bg-club-gold/20 px-2 py-0.5 text-xs font-medium text-club-gold">
+              Special draw
+            </span>
+          )}
         </h2>
         <p className="mt-1 text-sm text-gray-600">
           Confirmed players:{" "}
           <span className="font-bold text-club-green">{confirmed.length}</span>
         </p>
-        <p className="text-xs text-gray-500">
-          Entry window: 07:45 Friday → 07:44 Saturday · Draw time: 07:45
-        </p>
+        {win && (
+          <p className="text-xs text-gray-500">
+            Sign-up: {win.opensLabel} → {win.closesLabel} · Draw: {win.drawLabel}
+            {" · "}
+            <span
+              className={
+                win.phase === "open" ? "text-green-700" : "text-red-600"
+              }
+            >
+              {win.phase === "open"
+                ? "OPEN"
+                : win.phase === "pending"
+                  ? "not open yet"
+                  : "closed"}
+            </span>
+          </p>
+        )}
         <Link
           href="/players"
           className="mt-2 inline-block text-xs font-semibold text-club-green underline"
         >
           Manage club player list ({players.length} players)
         </Link>
+      </div>
+
+      <div className="mb-4 rounded-xl bg-white p-4 shadow-sm">
+        <h3 className="text-sm font-semibold text-gray-700">
+          Special draw (Sunday / bank holiday)
+        </h3>
+        {win?.specialDate ? (
+          <div className="mt-2 flex items-center justify-between text-sm">
+            <span>
+              Entries open for{" "}
+              <span className="font-semibold">{win.specialDate}</span> — same
+              24-hour rule (07:30 the day before → 07:30 on the day).
+            </span>
+            <button
+              onClick={() => act(async () => void (await cancelSpecialDraw()))}
+              className="ml-3 rounded-lg border border-red-400 px-3 py-1 text-xs font-semibold text-red-600"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="mt-2 flex gap-2">
+            <input
+              type="date"
+              value={specialInput}
+              onChange={(e) => setSpecialInput(e.target.value)}
+              className="flex-1 rounded-lg border border-gray-300 p-2 text-sm"
+            />
+            <button
+              onClick={() =>
+                act(async () => {
+                  if (!specialInput) throw new Error("Pick a date first.");
+                  await openSpecialDraw(specialInput);
+                  setSpecialInput("");
+                })
+              }
+              disabled={busy}
+              className="rounded-lg bg-club-green px-4 py-2 text-xs font-semibold text-white disabled:opacity-40"
+            >
+              Open sign-up
+            </button>
+          </div>
+        )}
       </div>
 
       {conflicts.length > 0 && (

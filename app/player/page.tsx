@@ -6,17 +6,12 @@ import RulesCard from "@/components/RulesCard";
 import {
   getPlayers,
   getEntries,
+  getWindow,
   enterDraw,
   withdrawEntry,
   type Entry,
+  type WindowInfo,
 } from "@/lib/store";
-import {
-  getCurrentDrawWindow,
-  getWindowStatus,
-  formatDrawDate,
-  formatWindowLine,
-  type WindowStatus,
-} from "@/lib/timeWindow";
 import type { PlayerPreference } from "@/lib/drawEngine";
 import type { Player } from "@/lib/mockData";
 
@@ -33,18 +28,20 @@ export default function PlayerEntryPage() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<WindowStatus>("open");
-
-  const window = getCurrentDrawWindow();
+  const [win, setWin] = useState<WindowInfo | null>(null);
 
   const load = async () => {
-    const [pl, en] = await Promise.all([getPlayers(), getEntries()]);
+    const [pl, en, w] = await Promise.all([
+      getPlayers(),
+      getEntries(),
+      getWindow(),
+    ]);
     setPlayers(pl);
     setEntries(en);
+    setWin(w);
   };
 
   useEffect(() => {
-    setStatus(getWindowStatus(getCurrentDrawWindow()));
     load()
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -89,24 +86,22 @@ export default function PlayerEntryPage() {
     }
   };
 
-  if (status !== "open") {
+  if (!win || win.phase !== "open") {
     return (
       <main>
         <Header badge="Entries Closed" />
         <div className="rounded-xl bg-white p-6 text-center shadow-sm">
-          {status === "not_yet_open" ? (
+          {win?.phase === "pending" ? (
             <>
               <h2 className="mb-2 text-lg font-semibold">
                 Entries aren’t open yet.
               </h2>
               <p className="text-sm text-gray-600">
-                The window for{" "}
-                <span className="font-medium">
-                  {formatDrawDate(window.drawDate)}
-                </span>{" "}
-                opens at
+                Sign-up for{" "}
+                <span className="font-medium">{win.targetLabel}</span>
+                {win.special ? " (special draw)" : ""} opens at
                 <br />
-                {formatWindowLine(window.windowStart)}.
+                {win.opensLabel}.
               </p>
             </>
           ) : (
@@ -115,7 +110,7 @@ export default function PlayerEntryPage() {
                 Entries are closed for this draw.
               </h2>
               <p className="text-sm text-gray-600">
-                The draw closed at 07:44.
+                Sign-up closed at 07:30.
                 <br />
                 Groups are drawn at 07:45.
               </p>
@@ -134,26 +129,24 @@ export default function PlayerEntryPage() {
       <Header badge="Entries Open" />
 
       <div className="mb-4 rounded-xl bg-white p-4 text-center shadow-sm">
-        <p className="font-semibold">Are you playing this weekend?</p>
+        <p className="font-semibold">
+          Are you playing{win.special ? " the special draw" : " this weekend"}?
+        </p>
         <p className="mt-2 text-sm text-gray-600">
           You are entering for:
           <br />
-          <span className="font-medium text-gray-900">
-            {formatDrawDate(window.drawDate)}
-          </span>
+          <span className="font-medium text-gray-900">{win.targetLabel}</span>
         </p>
         <p className="mt-2 text-xs text-gray-500">
           Entry window:
           <br />
-          {formatWindowLine(window.windowStart)}
+          {win.opensLabel}
           <br />
           until
           <br />
-          {formatWindowLine(window.windowEnd)}
+          {win.closesLabel}
         </p>
-        <p className="mt-2 text-xs text-gray-500">
-          Draw made: {formatWindowLine(window.drawTime)}
-        </p>
+        <p className="mt-2 text-xs text-gray-500">Draw made: {win.drawLabel}</p>
       </div>
 
       {myEntry ? (
@@ -163,7 +156,7 @@ export default function PlayerEntryPage() {
             Your 👍 has been counted for this weekend’s Breakfast Club draw.
           </p>
           <p className="mt-2 text-sm text-gray-600">
-            Draw closes at 07:44. Groups are drawn at 07:45.
+            Sign-up closes at 07:30. Groups are drawn at 07:45.
           </p>
           <p className="mt-3 text-sm">
             Tee preference:{" "}

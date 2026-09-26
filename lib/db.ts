@@ -53,6 +53,10 @@ async function bootstrap(): Promise<void> {
       whatsapp_message text not null,
       scores jsonb
     );
+    create table if not exists settings (
+      key text primary key,
+      value text
+    );
   `);
 
   // Seed the club player list once
@@ -81,4 +85,28 @@ export async function db(): Promise<Pool> {
   }
   await schemaReady;
   return getPool();
+}
+
+export async function getSetting(key: string): Promise<string | null> {
+  const p = await db();
+  const { rows } = await p.query("select value from settings where key = $1", [
+    key,
+  ]);
+  return rows[0]?.value ?? null;
+}
+
+export async function setSetting(
+  key: string,
+  value: string | null
+): Promise<void> {
+  const p = await db();
+  if (value === null) {
+    await p.query("delete from settings where key = $1", [key]);
+  } else {
+    await p.query(
+      `insert into settings (key, value) values ($1, $2)
+       on conflict (key) do update set value = $2`,
+      [key, value]
+    );
+  }
 }

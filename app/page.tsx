@@ -5,7 +5,7 @@ import RulesCard from "@/components/RulesCard";
 export default function HomePage() {
   return (
     <main>
-      <Header />
+      <Header home />
       <div className="space-y-4">
         <Link
           href="/player"

@@ -9,10 +9,22 @@ const BADGE_STYLES: Record<string, string> = {
 };
 
 import TreeLogo from "./TreeLogo";
+import Link from "next/link";
 
-export default function Header({ badge }: HeaderProps) {
+export default function Header({
+  badge,
+  home = false,
+}: HeaderProps & { home?: boolean }) {
   return (
-    <header className="pt-6 pb-4 text-center">
+    <header className="relative pt-6 pb-4 text-center">
+      {!home && (
+        <Link
+          href="/"
+          className="absolute left-0 top-2 rounded-lg border border-club-green/30 bg-white px-3 py-1.5 text-xs font-semibold text-club-green shadow-sm"
+        >
+          ← Dashboard
+        </Link>
+      )}
       <div className="flex justify-center">
         <TreeLogo size={64} />
       </div>

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, getSetting } from "@/lib/db";
 import { isWindowOpen } from "@/lib/serverWindow";
+
+async function windowOpen(): Promise<boolean> {
+  return isWindowOpen(new Date(), await getSetting("special_draw_date"));
+}
 
 export const dynamic = "force-dynamic";
 
@@ -20,11 +24,11 @@ export async function POST(req: NextRequest) {
   if (!playerId) {
     return NextResponse.json({ error: "playerId required" }, { status: 400 });
   }
-  if (source !== "admin" && !isWindowOpen()) {
+  if (source !== "admin" && !(await windowOpen())) {
     return NextResponse.json(
       {
         error:
-          "Entries are closed. The window is 07:45 Friday until 07:44 Saturday. Contact the admin to be added manually.",
+          "Entries are closed. Sign-up opens at 07:30 the day before the draw and closes at 07:30 on the day. Contact the admin to be added manually.",
       },
       { status: 403 }
     );
@@ -81,7 +85,7 @@ export async function DELETE(req: NextRequest) {
   if (!playerId) {
     return NextResponse.json({ error: "playerId required" }, { status: 400 });
   }
-  if (source !== "admin" && !isWindowOpen()) {
+  if (source !== "admin" && !(await windowOpen())) {
     return NextResponse.json(
       { error: "The draw window is closed — contact the admin to withdraw." },
       { status: 403 }
